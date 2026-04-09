@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audio Visualizer</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+  <header>
+    <h1>🎵 Audio Visualizer</h1>
+    <p>Web Audio API &amp; Canvas — dark glassmorphism edition</p>
+  </header>
+
+  <main class="card" role="main">
+
+    <!-- Canvas -->
+    <canvas id="visualizerCanvas" aria-label="Audio frequency visualizer"></canvas>
+
+    <!-- Track info -->
+    <div id="trackInfo" role="status" aria-live="polite">
+      <div class="track-icon" aria-hidden="true">♪</div>
+      <span id="trackName" class="placeholder">No track loaded</span>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls" role="group" aria-label="Playback controls">
+
+      <!-- Upload -->
+      <label class="btn-upload" aria-label="Upload audio file">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+             fill="none" stroke="currentColor" stroke-width="2.5"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        Upload Track
+        <input type="file" id="fileInput" accept="audio/*" aria-hidden="true" tabindex="-1" />
+      </label>
+
+      <!-- Play / Pause -->
+      <button id="playPauseBtn" disabled aria-label="Play">
+        <!-- Play icon (default) -->
+        <svg id="iconPlay" xmlns="http://www.w3.org/2000/svg" width="18" height="18"
+             viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+        <!-- Pause icon (hidden until playing) -->
+        <svg id="iconPause" xmlns="http://www.w3.org/2000/svg" width="18" height="18"
+             viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"
+             style="display:none">
+          <rect x="6" y="4" width="4" height="16"/>
+          <rect x="14" y="4" width="4" height="16"/>
+        </svg>
+      </button>
+
+      <!-- Mode buttons -->
+      <div class="mode-group" role="group" aria-label="Visualizer mode">
+        <button class="mode-btn active" data-mode="bars">Bars</button>
+        <button class="mode-btn" data-mode="wave">Wave</button>
+        <button class="mode-btn" data-mode="circle">Circle</button>
+      </div>
+    </div>
+
+    <!-- Seek bar -->
+    <div class="seek-row" role="group" aria-label="Seek">
+      <span class="time-label" id="currentTime">0:00</span>
+      <input type="range" id="seekBar" min="0" max="100" step="0.1" value="0"
+             aria-label="Seek" />
+      <span class="time-label" id="duration">0:00</span>
+    </div>
+
+    <!-- Volume -->
+    <div class="volume-row" role="group" aria-label="Volume">
+      <span class="volume-icon" aria-hidden="true">🔊</span>
+      <input type="range" id="volumeBar" min="0" max="1" step="0.01" value="0.8"
+             aria-label="Volume" />
+    </div>
+
+  </main>
+
+  <!-- Hidden audio element -->
+  <audio id="audioElement"></audio>
+
+  <script type="module">
+    import { AudioVisualizer } from './js/audioVisualizer.js';
+
+    // ── DOM refs ────────────────────────────────────────────────────
+    const canvas       = document.getElementById('visualizerCanvas');
+    const audio        = document.getElementById('audioElement');
+    const fileInput    = document.getElementById('fileInput');
+    const playPauseBtn = document.getElementById('playPauseBtn');
+    const iconPlay     = document.getElementById('iconPlay');
+    const iconPause    = document.getElementById('iconPause');
+    const trackName    = document.getElementById('trackName');
+    const seekBar      = document.getElementById('seekBar');
+    const currentTime  = document.getElementById('currentTime');
+    const durationEl   = document.getElementById('duration');
+    const volumeBar    = document.getElementById('volumeBar');
+    const modeBtns     = document.querySelectorAll('.mode-btn');
+
+    // ── Initialise visualizer ───────────────────────────────────────
+    const viz = new AudioVisualizer(canvas, audio);
+    viz.setVolume(parseFloat(volumeBar.value));
+
+    // ── Helpers ─────────────────────────────────────────────────────
+    function formatTime(secs) {
+      if (!isFinite(secs)) return '0:00';
+      const m = Math.floor(secs / 60);
+      const s = Math.floor(secs % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function setPlayingState(playing) {
+      iconPlay.style.display  = playing ? 'none'  : '';
+      iconPause.style.display = playing ? ''      : 'none';
+      playPauseBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    }
+
+    // ── File upload ─────────────────────────────────────────────────
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      viz.loadFile(file);
+      trackName.textContent = file.name;
+      trackName.classList.remove('placeholder');
+      playPauseBtn.disabled = false;
+      seekBar.value = 0;
+    });
+
+    // ── Play / Pause ────────────────────────────────────────────────
+    playPauseBtn.addEventListener('click', async () => {
+      if (!audio.src) return;
+
+      // Browsers require user gesture to resume AudioContext
+      await viz.resumeIfSuspended();
+
+      if (audio.paused) {
+        await audio.play();
+      } else {
+        audio.pause();
+      }
+    });
+
+    audio.addEventListener('play', () => {
+      setPlayingState(true);
+      viz.start();
+    });
+
+    audio.addEventListener('pause', () => {
+      setPlayingState(false);
+      viz.pause();
+    });
+
+    audio.addEventListener('ended', () => {
+      setPlayingState(false);
+      viz.pause();
+      seekBar.value = 0;
+      currentTime.textContent = '0:00';
+    });
+
+    // ── Seek ────────────────────────────────────────────────────────
+    let isSeeking = false;
+
+    audio.addEventListener('timeupdate', () => {
+      if (isSeeking || !isFinite(audio.duration)) return;
+      currentTime.textContent = formatTime(audio.currentTime);
+      seekBar.value = (audio.currentTime / audio.duration) * 100;
+    });
+
+    audio.addEventListener('loadedmetadata', () => {
+      durationEl.textContent = formatTime(audio.duration);
+      seekBar.value = 0;
+    });
+
+    seekBar.addEventListener('mousedown', () => { isSeeking = true; });
+    seekBar.addEventListener('touchstart', () => { isSeeking = true; }, { passive: true });
+
+    seekBar.addEventListener('input', () => {
+      if (!isFinite(audio.duration)) return;
+      const time = (seekBar.value / 100) * audio.duration;
+      currentTime.textContent = formatTime(time);
+    });
+
+    seekBar.addEventListener('change', () => {
+      if (!isFinite(audio.duration)) return;
+      viz.seek((seekBar.value / 100) * audio.duration);
+      isSeeking = false;
+    });
+
+    // ── Volume ──────────────────────────────────────────────────────
+    volumeBar.addEventListener('input', () => {
+      viz.setVolume(parseFloat(volumeBar.value));
+    });
+
+    // ── Visualizer modes ────────────────────────────────────────────
+    modeBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        modeBtns.forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        viz.setMode(btn.dataset.mode);
+      });
+    });
+  </script>
+
+</body>
+</html>
